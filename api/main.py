@@ -100,7 +100,7 @@ async def root():
 async def section(section: str):
     """Deep links like /brief or /ads open the same page on that section."""
     if section in {"overview", "competitors", "collect", "ads", "compare", "brief", "opportunities", "data", "profile",
-                   "strategy", "content"}:
+                   "strategy", "content", "team", "reset"}:
         return site_page()
     raise StarletteHTTPException(404, "Not found")
 

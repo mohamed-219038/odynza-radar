@@ -134,3 +134,13 @@ export interface ContentItem {
   image_url: string | null;
   video_url: string | null;
 }
+
+/** An account as an admin sees it on the Team page; "pending" means signed up and waiting for approval. */
+export interface ManagedUser {
+  id: number;
+  username: string;
+  role: User["role"] | "pending";
+  disabled: boolean;
+  created_at: string | null;
+  last_login_at: string | null;
+}

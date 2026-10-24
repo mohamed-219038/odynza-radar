@@ -145,6 +145,16 @@ class AuthSession(Base):
     user_agent = Column(String(300), nullable=True)
 
 
+class PasswordReset(Base):
+    """A one-time "forgot password" link. Only a SHA-256 of the link's token is stored; it expires after 30 minutes."""
+    __tablename__ = "password_resets"
+    token_hash = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 def get_db():
     """FastAPI dependency: yields a DB session and closes it after the request."""
     db: Session = SessionLocal()

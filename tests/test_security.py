@@ -225,6 +225,38 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(other.post('/content/runs', json={}, headers=self.csrf(other)).status_code, 403)
         other.close()
 
+    def test_forgot_password_emails_a_one_time_link(self):
+        from datetime import datetime, timedelta
+        from unittest import mock
+        from db.database import PasswordReset
+        self.add_user('sara@example.com', role='member')
+        self.add_user('bob', role='member')
+        with mock.patch.dict(os.environ, {'SMTP_USER': '', 'SMTP_PASSWORD': ''}):
+            self.assertEqual(self.client.post('/auth/forgot', json={'username': 'sara@example.com'}).status_code, 503)
+        sent = []
+        env = {'SMTP_USER': 'radar@example.com', 'SMTP_PASSWORD': 'app-password', 'RADAR_PUBLIC_URL': 'https://radar.test'}
+        with mock.patch.dict(os.environ, env), mock.patch('api.routers.auth.send_reset_email', lambda to, link: sent.append((to, link))):
+            known = self.client.post('/auth/forgot', json={'username': 'Sara@example.com'})
+            unknown = self.client.post('/auth/forgot', json={'username': 'nobody@example.com'})
+            no_email = self.client.post('/auth/forgot', json={'username': 'bob'})
+        self.assertEqual({known.status_code, unknown.status_code, no_email.status_code}, {200})
+        self.assertEqual(known.json(), unknown.json())                       # never tells whether the account exists
+        self.assertEqual(len(sent), 1)
+        to, link = sent[0]
+        self.assertEqual(to, 'sara@example.com')
+        self.assertTrue(link.startswith('https://radar.test/reset?token='))
+        token = link.split('token=')[1]
+        with self.factory() as db:
+            self.assertIsNotNone(db.get(PasswordReset, token_hash(token)))   # only the hash is stored
+        self.assertEqual(self.client.post('/auth/reset', json={'token': token, 'password': 'short'}).status_code, 422)
+        self.assertEqual(self.client.post('/auth/reset', json={'token': token, 'password': 'a brand new secret'}).status_code, 200)
+        self.assertEqual(self.client.post('/auth/reset', json={'token': token, 'password': 'another new secret'}).status_code, 400)
+        self.assertEqual(self.login(name='sara@example.com', password='a brand new secret').status_code, 200)
+        with self.factory() as db:                                           # an expired link is refused
+            db.add(PasswordReset(token_hash=token_hash('x' * 40), user_id=1, expires_at=datetime.utcnow() - timedelta(minutes=1)))
+            db.commit()
+        self.assertEqual(self.client.post('/auth/reset', json={'token': 'x' * 40, 'password': 'a brand new secret'}).status_code, 400)
+
     def test_sign_up_modes(self):
         self.add_user()
         try:

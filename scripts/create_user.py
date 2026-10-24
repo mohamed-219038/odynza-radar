@@ -59,8 +59,9 @@ def main():
             db.query(AuthSession).filter(AuthSession.user_id == user.id).delete()
         else:
             db.add(User(username=name, password_hash=hash_password(password), role=role))
+        done = f'{"Updated" if user else "Created"} {name} ({user.role if user else role}).'
         db.commit()
-    print(f'{"Updated" if user else "Created"} {name} ({user.role if user else role}).')
+    print(done)
 
 
 if __name__ == '__main__':

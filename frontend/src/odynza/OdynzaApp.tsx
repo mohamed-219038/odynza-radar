@@ -12,6 +12,7 @@ import { ThemeSwitch } from "./Theme";
 import { Radar } from "./Radar";
 import { AgentPages, type AgentMode } from "./AgentPages";
 import { ClientSwitch } from "./ClientSwitch";
+import { TeamPage } from "./TeamPage";
 
 /** Sidebar sections in the order Odynza asked for (profile, competitors, overview, then the rest): the URL path,
     the Watch section it opens, its label. */
@@ -43,6 +44,8 @@ function agentFromPath(): AgentMode | null {
   const slug = window.location.pathname.replace(/^\/+|\/+$/g, "");
   return AGENTS.find(([p]) => p === slug)?.[0] ?? null;
 }
+
+const onTeamPath = () => window.location.pathname.replace(/^\/+|\/+$/g, "") === "team";
 
 function fromPath(): TabKey | null {
   const slug = window.location.pathname.replace(/^\/+|\/+$/g, "");
@@ -95,23 +98,69 @@ export function OdynzaApp() {
 }
 
 function SignIn({ status, onSignedIn }: { status: AuthStatus; onSignedIn: (s: AuthStatus) => void }) {
+  const canSignUp = !status.setup_required && Boolean(status.signup) && status.signup !== "off";
+  const [token] = useState(() => (window.location.pathname.replace(/\/+$/, "") === "/reset" ? new URLSearchParams(window.location.search).get("token") ?? "" : ""));
+  const [mode, setMode] = useState<"in" | "up" | "setup" | "forgot" | "reset">(token ? "reset" : status.setup_allowed ? "setup" : "in");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [repeat, setRepeat] = useState("");
   const [error, setError] = useState("");
+  const [done, setDone] = useState("");
   const [busy, setBusy] = useState(false);
+  const switchTo = (m: "in" | "up" | "forgot") => {
+    setMode(m);
+    setError("");
+    setDone("");
+    setPassword("");
+    setRepeat("");
+  };
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if ((mode === "up" || mode === "setup" || mode === "reset") && password !== repeat) {
+      setError("The passwords do not match.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      onSignedIn(await request<AuthStatus>("/auth/login", json({ username: username.trim(), password })));
+      if (mode === "forgot" || mode === "reset") {
+        const out =
+          mode === "forgot"
+            ? await request<{ message: string }>("/auth/forgot", json({ username: username.trim() }))
+            : await request<{ message: string }>("/auth/reset", json({ token, password }));
+        if (mode === "reset") window.history.replaceState(null, "", "/");
+        setDone(out.message);
+        setMode("in");
+        setPassword("");
+        setRepeat("");
+        return;
+      }
+      const path = mode === "in" ? "/auth/login" : mode === "up" ? "/auth/signup" : "/auth/setup";
+      const out = await request<AuthStatus & { pending?: boolean }>(path, json({ username: username.trim(), password }));
+      if (out.pending) {
+        setDone(`Thanks, ${username.trim()}. An admin has to approve your account before you can sign in.`);
+        setMode("in");
+        setPassword("");
+        setRepeat("");
+      } else onSignedIn(out);
     } catch (err) {
       setError((err as Error).message);
       setPassword("");
+      setRepeat("");
     } finally {
       setBusy(false);
     }
   }
+  const label =
+    mode === "in"
+      ? ["Sign in", "Signing in…"]
+      : mode === "up"
+        ? ["Create account", "Creating…"]
+        : mode === "forgot"
+          ? ["Email me a reset link", "Sending…"]
+          : mode === "reset"
+            ? ["Save new password", "Saving…"]
+            : ["Create the admin account", "Creating…"];
   return (
     <div className="odz-signin">
       <ThemeSwitch />
@@ -124,28 +173,90 @@ function SignIn({ status, onSignedIn }: { status: AuthStatus; onSignedIn: (s: Au
         <h1>
           Watch. Plan. Create. <em>Before they do.</em>
         </h1>
-        {status.setup_required ? (
-          <p className="odz-note">No account exists yet. On the server computer run <code>python scripts/create_user.py yourname --admin</code>, then sign in here.</p>
+        {mode === "setup" ? (
+          <p className="odz-note">No account exists yet. Create the first admin account.</p>
+        ) : status.setup_required ? (
+          <p className="odz-note">No account exists yet. Open this page on the server computer, or run <code>python scripts/create_user.py yourname --admin</code> there.</p>
+        ) : mode === "forgot" ? (
+          <p className="odz-note">Type your username (your email address). We email you a link to choose a new password.</p>
+        ) : mode === "reset" ? (
+          <p className="odz-note">Choose a new password: at least 10 characters. Every browser signed in as you is signed out.</p>
+        ) : mode === "up" ? (
+          <p className="odz-note">
+            {status.signup === "viewer" ? "New accounts can look at everything but change nothing." : "An admin approves new accounts before they can sign in."}
+          </p>
+        ) : null}
+        {done ? (
+          <p className="odz-note" role="status">
+            {done}
+          </p>
         ) : null}
         <form onSubmit={submit}>
-          <label>
-            Username
-            <input autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
-          </label>
-          <label>
-            Password
-            <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          </label>
+          {mode !== "reset" ? (
+            <label>
+              Username
+              <input autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required minLength={mode === "in" || mode === "forgot" ? 1 : 3} maxLength={64} />
+            </label>
+          ) : null}
+          {mode !== "forgot" ? (
+            <label>
+              {mode === "reset" ? "New password" : "Password"}
+              <input
+                type="password"
+                autoComplete={mode === "in" ? "current-password" : "new-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={mode === "in" ? 1 : 10}
+                maxLength={256}
+              />
+            </label>
+          ) : null}
+          {mode === "up" || mode === "setup" || mode === "reset" ? (
+            <label>
+              Repeat password
+              <input type="password" autoComplete="new-password" value={repeat} onChange={(e) => setRepeat(e.target.value)} required maxLength={256} />
+            </label>
+          ) : null}
           {error ? (
             <p className="odz-error" role="alert">
               {error}
             </p>
           ) : null}
           <button className="odz-button primary" disabled={busy}>
-            {busy ? "Signing in…" : "Sign in"}
+            {busy ? label[1] : label[0]}
           </button>
         </form>
-        <p className="odz-fine">Client logins see only their own company.</p>
+        {mode === "in" ? (
+          <p className="odz-fine">
+            <button type="button" className="odz-link" onClick={() => switchTo("forgot")}>
+              Forgot password?
+            </button>
+          </p>
+        ) : mode === "forgot" || mode === "reset" ? (
+          <p className="odz-fine">
+            <button
+              type="button"
+              className="odz-link"
+              onClick={() => {
+                if (mode === "reset") window.history.replaceState(null, "", "/");
+                switchTo("in");
+              }}
+            >
+              Back to sign in
+            </button>
+          </p>
+        ) : null}
+        {mode === "forgot" || mode === "reset" ? null : canSignUp ? (
+          <p className="odz-fine">
+            {mode === "in" ? "New here? " : "Already have an account? "}
+            <button type="button" className="odz-link" onClick={() => switchTo(mode === "in" ? "up" : "in")}>
+              {mode === "in" ? "Sign up" : "Sign in"}
+            </button>
+          </p>
+        ) : (
+          <p className="odz-fine">Client logins see only their own company.</p>
+        )}
       </main>
     </div>
   );
@@ -165,6 +276,8 @@ function Shell({ user, onSignedOut }: { user: User; onSignedOut: () => void }) {
   const [m0Open, setM0Open] = useState(true);
   const [agent, setAgent] = useState<AgentMode | null>(agentFromPath);
   const [adding, setAdding] = useState(false);
+  const [team, setTeam] = useState(() => user.role === "admin" && onTeamPath());
+  const [pending, setPending] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -183,19 +296,36 @@ function Shell({ user, onSignedOut }: { user: User; onSignedOut: () => void }) {
     const back = () => {
       setTab(fromPath());
       setAgent(agentFromPath());
+      setTeam(user.role === "admin" && onTeamPath());
     };
     window.addEventListener("popstate", back);
     return () => window.removeEventListener("popstate", back);
   }, []);
 
   const steps = watchSteps(Boolean(info?.client), info?.progress);
+  useEffect(() => {
+    if (user.role !== "admin") return;
+    request<{ role: string }[]>("/auth/users")
+      .then((list) => setPending(list.filter((u) => u.role === "pending").length))
+      .catch(() => undefined);
+  }, [user.role]);
+  const goTeam = () => {
+    setTeam(true);
+    setAgent(null);
+    setAdding(false);
+    setMenu(false);
+    if (window.location.pathname !== "/team") window.history.pushState(null, "", "/team");
+    window.scrollTo({ top: 0 });
+  };
   const goAgent = (a: AgentMode) => {
+    setTeam(false);
     setAgent(a);
     setMenu(false);
     if (window.location.pathname !== `/${a}`) window.history.pushState(null, "", `/${a}`);
     window.scrollTo({ top: 0 });
   };
   const go = (t: TabKey) => {
+    setTeam(false);
     setAgent(null);
     setAdding(false);
     setTab(t);
@@ -209,7 +339,7 @@ function Shell({ user, onSignedOut }: { user: User; onSignedOut: () => void }) {
     setCsrf("");
     onSignedOut();
   }
-  const current = agent ? AGENTS.find(([a]) => a === agent)![3] : SECTIONS.find(([, k]) => k === tab)?.[2] ?? "Overview";
+  const current = team ? "Team" : agent ? AGENTS.find(([a]) => a === agent)![3] : SECTIONS.find(([, k]) => k === tab)?.[2] ?? "Overview";
   const running = info?.progress?.running;
 
   return (
@@ -256,7 +386,7 @@ function Shell({ user, onSignedOut }: { user: User; onSignedOut: () => void }) {
           {SECTIONS.filter(([, k]) => k !== "setup" || can.staff).map(([slug, key, label]) => {
             const open = tabOpen(key, steps);
             const need = TAB_NEEDS[key];
-            const active = !agent && !adding && (tab ?? "overview") === key;
+            const active = !team && !agent && !adding && (tab ?? "overview") === key;
             return (
               <button
                 key={slug}
@@ -286,6 +416,18 @@ function Shell({ user, onSignedOut }: { user: User; onSignedOut: () => void }) {
                 </button>
               ))
             : null}
+          {user.role === "admin" ? (
+            <button className={"odz-agent-link odz-team-link" + (team ? " active" : "")} aria-current={team ? "page" : undefined} onClick={goTeam}>
+              <span className="odz-team-icon" aria-hidden="true">
+                ⚇
+              </span>
+              <span>
+                <b>Team</b>
+                <small>{pending ? `${pending} waiting for approval` : "Accounts and roles"}</small>
+              </span>
+              {pending ? <span className="odz-count">{pending}</span> : null}
+            </button>
+          ) : null}
         </nav>
         <div className="odz-side-foot">
           {running ? (
@@ -320,11 +462,13 @@ function Shell({ user, onSignedOut }: { user: User; onSignedOut: () => void }) {
             <span className="odz-hello">
               {greeting()}, {user.username}
             </span>
-            <h1>{adding && !agent ? "New client" : current}</h1>
+            <h1>{adding && !agent && !team ? "New client" : current}</h1>
           </div>
         </header>
-        <PageRise when={`${agent ?? ""}:${tab ?? ""}`}>
-        {agent && can.staff ? (
+        <PageRise when={`${team ? "team" : ""}:${agent ?? ""}:${tab ?? ""}`}>
+        {team ? (
+          <TeamPage me={user} onChange={setPending} />
+        ) : agent && can.staff ? (
           <AgentPages user={user} mode={agent} onMode={goAgent} onOpportunities={() => go("opportunities")} />
         ) : (
           <>

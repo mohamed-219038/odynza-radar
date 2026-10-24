@@ -53,7 +53,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.client.get('/content/runs').json(), [])
 
     def test_sections_serve_the_site_and_unknown_paths_do_not(self):
-        for path in ('/', '/overview', '/data', '/profile', '/strategy', '/content'):
+        for path in ('/', '/overview', '/data', '/profile', '/strategy', '/content', '/team'):
             r = self.client.get(path)
             self.assertIn(r.status_code, (200, 503), path)
         self.assertEqual(self.client.get('/nope-not-a-section').status_code, 404)

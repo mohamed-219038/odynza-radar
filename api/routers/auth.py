@@ -1,15 +1,21 @@
-"""Sign in / out, the signed-in user, own password, and admin user management."""
-from datetime import datetime
+"""Sign in / out, sign-up, forgotten passwords, the signed-in user, own password, and admin user management."""
+import os
+import secrets
+import smtplib
+import ssl
+from datetime import datetime, timedelta
+from email.message import EmailMessage
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from loguru import logger
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api.security import (PENDING, signup_mode, AuthSession, AuthUser, ROLES, burn_password_check, clean_username, client_ip, current_user,
                           direct_loopback, end_session, hash_password, limiter, lookup_session, password_problem,
-                          require_admin, require_user, start_session, too_many, verify_password)
-from db.database import User, get_db
+                          require_admin, require_user, start_session, token_hash, too_many, verify_password)
+from api.watch.brief import email_settings
+from db.database import PasswordReset, User, get_db
 
 router = APIRouter()
 
@@ -103,6 +109,90 @@ def signup(body: Credentials, request: Request, response: Response, db: Session 
     return {'authenticated': True, 'user': {'id': user.id, 'username': user.username, 'role': user.role}, 'csrf': row.csrf}
 
 
+class ForgotIn(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+
+
+class ResetIn(BaseModel):
+    token: str = Field(min_length=20, max_length=128)
+    password: str = Field(min_length=1, max_length=256)
+
+
+RESET_FOR = timedelta(minutes=30)
+FORGOT_SENT = ('If that account exists and its username is an email address, a reset link is on its way. '
+               'It works for 30 minutes. No email? Ask an admin to reset your password on the Team page.')
+
+
+def send_reset_email(to: str, link: str):
+    """Runs after the response, so the answer and its timing never show whether the account exists."""
+    s = email_settings()
+    msg = EmailMessage()
+    msg['Subject'] = 'Reset your Odynza Radar password'
+    msg['From'] = s['sender']
+    msg['To'] = to
+    msg.set_content(f'Someone asked to reset the Odynza Radar password for {to}.\n\n'
+                    f'Open this link within 30 minutes to choose a new password:\n{link}\n\n'
+                    'If it was not you, ignore this email; your password stays the same.')
+    try:
+        with smtplib.SMTP(s['host'], s['port'], timeout=30) as smtp:
+            smtp.starttls(context=ssl.create_default_context())
+            smtp.login(s['user'], s['password'])
+            smtp.send_message(msg)
+        logger.info(f'[auth] password reset link sent to {to}')
+    except (smtplib.SMTPException, OSError) as exc:
+        logger.warning(f'[auth] password reset email to {to} failed: {type(exc).__name__}')
+
+
+@router.post('/forgot')
+def forgot(body: ForgotIn, request: Request, tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Public: emails a one-time reset link when the username is an email address. The answer is the same either way."""
+    s = email_settings()
+    if not s['user'] or not s['password']:
+        raise HTTPException(503, 'Email is not set up on this server, so reset links cannot be sent. '
+                                 'Ask an admin to reset your password on the Team page.')
+    ip = client_ip(request)
+    name = body.username.strip().lower()
+    for key, limit in ((f'forgot-ip:{ip}', 10), (f'forgot-name:{name}', 3)):
+        wait = limiter.check(key, limit, 3600)
+        if wait:
+            too_many(wait, 'reset requests')
+    user = db.query(User).filter(User.username == name).first()
+    if user and not user.disabled and user.role != PENDING and '@' in name:
+        db.query(PasswordReset).filter(PasswordReset.user_id == user.id, PasswordReset.used_at.is_(None)).delete()
+        token = secrets.token_urlsafe(32)
+        db.add(PasswordReset(token_hash=token_hash(token), user_id=user.id, expires_at=datetime.utcnow() + RESET_FOR))
+        db.commit()
+        base = (os.getenv('RADAR_PUBLIC_URL') or '').strip().rstrip('/') or str(request.base_url).rstrip('/')
+        tasks.add_task(send_reset_email, user.username, f'{base}/reset?token={token}')
+    else:
+        logger.info(f'[auth] reset asked for {name!r}: no email to send to')
+    return {'message': FORGOT_SENT}
+
+
+@router.post('/reset')
+def reset_password(body: ResetIn, request: Request, db: Session = Depends(get_db)):
+    """Public: sets a new password with a link from /forgot. The link works once, and every browser is signed out."""
+    wait = limiter.check(f'reset-ip:{client_ip(request)}', 20, 3600)
+    if wait:
+        too_many(wait, 'reset attempts')
+    row = db.get(PasswordReset, token_hash(body.token))
+    if row is None or row.used_at is not None or row.expires_at < datetime.utcnow():
+        raise HTTPException(400, 'This reset link is used up or has expired. Ask for a new one.')
+    user = db.get(User, row.user_id)
+    if user is None or user.disabled:
+        raise HTTPException(400, 'This reset link is used up or has expired. Ask for a new one.')
+    problem = password_problem(body.password, user.username)
+    if problem:
+        raise HTTPException(422, problem)
+    user.password_hash = hash_password(body.password)
+    row.used_at = datetime.utcnow()
+    db.query(AuthSession).filter(AuthSession.user_id == user.id).delete()
+    db.commit()
+    limiter.clear(f'login-fail:{user.username}')
+    logger.info(f'[auth] {user.username} chose a new password with a reset link')
+    return {'message': 'Your new password is saved. Sign in with it now.'}
+
+
 @router.post('/setup')
 def first_admin(body: Credentials, request: Request, response: Response, db: Session = Depends(get_db)):
     """Create the first admin from a browser on this computer only, and only while no account exists."""
@@ -165,7 +255,7 @@ def list_users(admin: AuthUser = Depends(require_admin), db: Session = Depends(g
 def create_user(body: NewUser, admin: AuthUser = Depends(require_admin), db: Session = Depends(get_db)):
     name = clean_username(body.username)
     if body.role not in ROLES:
-        raise HTTPException(422, 'Role must be admin, member or viewer.')
+        raise HTTPException(422, 'Role must be admin, member, viewer or client.')
     problem = password_problem(body.password, name)
     if problem:
         raise HTTPException(422, problem)
@@ -192,7 +282,7 @@ def update_user(user_id: int, body: UserUpdate, admin: AuthUser = Depends(requir
         raise HTTPException(409, 'Keep at least one active admin.')
     if body.role is not None:
         if body.role not in ROLES:
-            raise HTTPException(422, 'Role must be admin, member or viewer.')
+            raise HTTPException(422, 'Role must be admin, member, viewer or client.')
         user.role = body.role
     if body.disabled is not None:
         user.disabled = body.disabled
