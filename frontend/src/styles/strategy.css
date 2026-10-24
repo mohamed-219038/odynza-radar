@@ -1,0 +1,35 @@
+/* Strategy plans: reuses the studio tokens and components. */
+#strategy-view{display:none}
+.strategy-only #strategy-view{display:block}
+.strategy-only .workspace-grid,.strategy-only .page-heading>.button[data-new]{display:none}
+.strategy-view .section-heading .button{flex-shrink:0}
+.plan-new-dialog{width:min(640px,calc(100% - 32px));max-height:92vh;max-height:92dvh;overflow:auto}
+.plan-new-dialog textarea{display:block;width:100%;padding:11px 12px;background:white;border:1px solid #dbe2d8;border-radius:6px;font:inherit;font-size:12px;margin-top:6px;color:var(--ink);resize:vertical}
+.plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.plan-channels{border:0;padding:0;margin:16px 0 0}
+.plan-channels legend{font-size:11px;font-weight:600;padding:0}
+#plan-channels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 14px;margin-top:8px}
+.plan-new-dialog #plan-channels label{margin-top:0}
+.plan-dialog #plan-content{max-height:62vh;max-height:62dvh;overflow:auto;padding:4px 28px 20px}
+.plan-section{padding:18px 0;border-bottom:1px solid var(--line)}
+.plan-section:last-of-type{border-bottom:0}
+.plan-section h3{font-family:var(--heading);font-size:17px;margin:8px 0 6px;letter-spacing:-.3px}
+.plan-section p{font-size:12px;line-height:1.55;margin:6px 0}
+.plan-lead{font-size:14px!important;color:var(--ink)}
+.plan-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:12px}
+.plan-card{background:white;border:1px solid var(--line);border-radius:8px;padding:14px;font-size:12px;line-height:1.5}
+.plan-card b{display:block}
+.plan-card small{display:block;color:var(--muted);margin-top:4px}
+.plan-card h4{font-family:var(--heading);font-size:14px;margin:8px 0 2px}
+.plan-card ol,.plan-list{margin:6px 0 6px 18px;font-size:12px;line-height:1.55}
+.plan-quotes{margin-top:12px;display:grid;gap:8px}
+.plan-quotes blockquote{margin:0;padding:10px 12px;background:var(--mint);border-left:3px solid var(--green);border-radius:6px;font-size:12px}
+.plan-quotes small{display:block;color:var(--muted);margin-top:4px}
+.plan-table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px;background:white;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.plan-table th{text-align:left;font-size:10px;letter-spacing:.3px;text-transform:uppercase;color:var(--muted);background:#f0f3eb;padding:9px 10px}
+.plan-table td{padding:9px 10px;border-top:1px solid var(--line);vertical-align:top;line-height:1.45}
+.plan-budget{margin-top:16px}
+.plan-budget small{display:block;font-size:11px;margin-top:4px}
+.plan-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.plan-note{font-size:11px;padding:4px 0 8px}
+@media(max-width:760px){.plan-grid,.plan-columns,#plan-channels{grid-template-columns:1fr}.plan-dialog #plan-content{padding:4px 20px 16px}.plan-table{display:block;overflow-x:auto}}

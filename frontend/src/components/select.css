@@ -1,0 +1,44 @@
+/* React Select, styled from the page's own colours: the --odz-* tokens, with plain fallbacks. */
+.rs{--rs-bg:var(--odz-card2,#fff);--rs-menu:var(--odz-card,#fff);--rs-ink:var(--odz-ink,#17202f);--rs-muted:var(--odz-muted,#6b7487);
+  --rs-line:var(--odz-line,#d6dbe5);--rs-hover:var(--odz-raise,#eef2f8);--rs-accent:var(--odz-accent,#2f6fed);
+  display:block;min-width:150px;font:inherit;text-align:left;color:var(--rs-ink)}
+label .rs{margin-top:6px}
+.rs__control{display:flex;align-items:center;min-height:40px;padding:0 6px 0 12px;background:var(--rs-bg);border:1px solid var(--rs-line);border-radius:12px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.rs__control:hover{border-color:var(--rs-accent)}
+.rs__control--is-focused{border-color:var(--rs-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--rs-accent) 25%,transparent)}
+.rs__control--menu-is-open{border-color:var(--rs-accent)}
+.rs__control--is-disabled{opacity:.55;cursor:not-allowed}
+.rs__value-container{gap:4px;padding:6px 0;min-width:0}
+.rs__single-value{color:var(--rs-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rs__placeholder{color:var(--rs-muted)}
+.rs__input-container{color:var(--rs-ink)}
+.rs__indicator-separator{display:none}
+.rs__indicator{color:var(--rs-muted);padding:6px;transition:transform .2s,color .15s}
+.rs__control--menu-is-open .rs__dropdown-indicator{transform:rotate(180deg);color:var(--rs-accent)}
+.rs__menu{z-index:1000;margin-top:6px;background:var(--rs-menu);border:1px solid var(--rs-line);border-radius:14px;padding:6px;box-shadow:0 18px 40px rgba(5,9,20,.35);animation:rs-in .14s ease-out}
+.rs__menu-list{display:flex;flex-direction:column;gap:2px;max-height:280px}
+.rs__option{padding:9px 12px;border-radius:9px;cursor:pointer;color:var(--rs-ink);line-height:1.35}
+.rs__option--is-focused{background:var(--rs-hover)}
+.rs__option--is-selected{background:color-mix(in srgb,var(--rs-accent) 18%,transparent);font-weight:600}
+.rs__option--is-selected::after{content:"✓";float:right;margin-left:12px;color:var(--rs-accent)}
+.rs__option--is-disabled{opacity:.45;cursor:not-allowed}
+.rs__menu-notice{padding:10px 12px;color:var(--rs-muted)}
+.rs-small{min-width:130px;display:inline-block}
+.rs-small .rs__control{min-height:32px;border-radius:10px;padding-left:10px;font-size:13px}
+.rs-small .rs__value-container{padding:3px 0}
+.rs-small .rs__indicator{padding:3px}
+@keyframes rs-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.rs__menu{animation:none}.rs__indicator{transition:none}}
+/* The app styles every <input>; the search box inside the dropdown must stay bare. */
+:is(#_rs,.rs) .rs__input-container input,:is(#_rs,.rs) input.rs__input,:is(#_rs,.rs) .rs__value-container input{border:0!important;background:transparent!important;box-shadow:none!important;padding:0!important;margin:0!important;min-height:0!important;height:auto!important;outline:0!important;color:inherit!important;width:auto}
+/* Screen-reader text stays hidden even where the app gives every span inside a label a block layout. */
+:is(#_rs,.rs) span[id$="-live-region"],:is(#_rs,.rs) span[id$="-live-region"] *{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;padding:0!important;margin:-1px!important;border:0!important;white-space:nowrap!important}
+:is(#_rs,.rs) .rs__single-value,:is(#_rs,.rs) .rs__placeholder{display:block;margin:0;font-size:inherit;color:var(--rs-ink)}
+:is(#_rs,.rs) .rs__placeholder{color:var(--rs-muted)}
+/* Layout held against the app's general div and input rules. */
+:is(#_rs,.rs) .rs__control{display:flex!important;flex-wrap:nowrap}
+:is(#_rs,.rs) .rs__value-container{display:grid!important;flex:1;align-items:center;overflow:hidden}
+:is(#_rs,.rs) .rs__single-value,:is(#_rs,.rs) .rs__placeholder,:is(#_rs,.rs) .rs__input-container{grid-area:1/1/2/3}
+:is(#_rs,.rs) .rs__value-container>input{position:absolute!important;width:1px!important;height:1px!important;opacity:0}
+:is(#_rs,.rs) .rs__indicators{display:flex!important;align-items:center;align-self:stretch}
+:is(#_rs,.rs) .rs__indicator{display:flex!important}

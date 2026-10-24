@@ -1,0 +1,32 @@
+/* Sign-in, account and team screens. Uses the same tokens and components as studio.css. */
+.auth-shell{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:32px 16px;background:radial-gradient(circle at 20% 10%,#eef4e6 0,transparent 45%),var(--paper)}
+.auth-card{width:min(440px,100%);background:#fff;border:1px solid var(--line);border-radius:17px;padding:34px 32px 26px;box-shadow:0 24px 80px #12332718}
+.auth-card .brand{padding:0;margin-bottom:30px;font-size:31px}
+.auth-card h1{font-size:27px;letter-spacing:-1.1px;line-height:1.35;margin:8px 0 18px}
+.auth-card h1 em{display:block;font-family:Georgia,serif;font-weight:400;color:#7e9277}
+.auth-form label,.account-form label{display:block;font-size:11px;font-weight:600;margin-top:14px}
+.auth-form input,.account-form input,.account-form select{display:block;width:100%;padding:11px 12px;background:#fff;border:1px solid #dbe2d8;border-radius:6px;font-size:12px;margin-top:6px;color:var(--ink)}
+.auth-form .button{width:100%;margin-top:16px}
+.auth-form .muted,.account-form .muted{font-size:11px}
+.auth-card .alert code{font-size:11px;background:#fff8;padding:1px 4px;border-radius:4px}
+.auth-foot{margin-top:26px!important;font-size:9px;letter-spacing:1.6px;color:#98a39d;text-align:center}
+.account-links{display:flex;flex-wrap:wrap;gap:4px 12px;margin:10px 4px 0;font-size:11px}
+.account-links button{background:none;padding:2px 0;color:#5f7a62;font-weight:600}
+.account-links button:hover{text-decoration:underline}
+.team-list{margin-top:14px;border:1px solid var(--line);border-radius:9px;background:#fff;overflow:hidden}
+.team-row{display:flex;gap:12px;align-items:center;padding:11px 14px;border-top:1px solid var(--line);font-size:12px;flex-wrap:wrap}
+.team-row:first-child{border-top:0}
+.team-row .team-name{flex:1;min-width:140px}
+.team-row .team-name small{color:var(--muted);font-size:10px}
+.team-row .button{min-height:32px;padding:6px 10px;font-size:10px}
+.account-form .plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:520px){.auth-card{padding:28px 20px 20px}.account-form .plan-grid{grid-template-columns:1fr}}
+.logout-button{min-height:32px;padding:6px 12px;font-size:11px;gap:6px}
+.logout-button span{font-size:13px}
+.team-role{width:auto!important;display:inline-block!important;margin:0!important;padding:6px 8px!important;font-size:10px!important}
+.viewer-note{background:#eef3e8;color:#4b6347;border-color:#dce4d3}
+.auth-switch{margin-top:16px!important;text-align:center;font-size:12px;color:var(--muted)}
+.auth-switch button{background:none;padding:0;color:var(--green);font-weight:650}
+.auth-switch button:hover{text-decoration:underline}
+.auth-form .form-error{font-size:12px;line-height:1.5}
+.pending-count{margin-left:5px;background:var(--lime);color:var(--green);font-size:9px;padding:1px 5px;border-radius:4px}
