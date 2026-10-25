@@ -157,7 +157,7 @@ export function NewPlan({ onCancel, onCreated }: { onCancel: () => void; onCreat
 
       <section className="p2-box" aria-labelledby="np2">
         <h3 id="np2"><b>2</b> Voice per platform</h3>
-        <p className="p2-fine">The content agents write every post in this voice. LinkedIn is in English; Instagram and Facebook are in Egyptian Arabic.</p>
+        <p className="p2-fine">The content agents write every post in this voice. Every platform is written in English.</p>
         <div className="p2-voices">
           {PLATFORMS.map((p) => (
             <fieldset key={p} className="p2-voice">

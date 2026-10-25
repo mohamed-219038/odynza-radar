@@ -69,6 +69,49 @@ class ContentRadar(unittest.TestCase):
                                                            'start_date': '2026-11-08', 'weeks': 1, 'stories_per_week': 2,
                                                            'reels_per_month': 1, **body})
 
+    def test_carousel_slides_get_pictures_in_the_cover_style(self):
+        import tempfile
+        from pathlib import Path
+        from api.gemini import GeminiError
+        png = b'\x89PNG\r\n\x1a\n' + b'0' * 50
+        run_id = 'c' * 8 + '-1111-2222-3333-' + 'd' * 12
+        slides = [{'headline': f'Slide {n}', 'body': f'Body {n}'} for n in range(1, 5)]
+        with self.factory() as db:
+            db.add(ContentRun(id=run_id, plan_id=self.pid, company_name='Odynza', status='completed', inputs={'brand_look': 'Navy'}))
+            db.add(ContentItem(id=7, run_id=run_id, slot_id='s1', platform='LinkedIn', post_date='2026-11-10', format='document',
+                               content={'text': 'Hi', 'hashtags': [], 'slides': slides, 'image_prompt': 'Dark navy slides'}))
+            db.commit()
+        prompts = []
+
+        class Maker:
+            async def make(self, prompt, aspect, references=()):
+                prompts.append((prompt, aspect, references))
+                if 'Slide 3 of' in prompt:
+                    raise GeminiError('OpenRouter returned HTTP 402: Insufficient credits')
+                return png, 'image/png'
+        with tempfile.TemporaryDirectory() as tmp, patch('api.content_media.ROOT', Path(tmp)), \
+                patch('api.routers.content.image_maker', return_value=Maker()):
+            self.assertEqual(self.client.post('/content/items/7/slides').status_code, 409)   # no cover yet
+            folder = Path(tmp) / 'data' / 'content' / run_id
+            folder.mkdir(parents=True)
+            (folder / '7-image.png').write_bytes(png)
+            item = self.client.post('/content/items/7/slides').json()
+            self.assertEqual(len(prompts), 3)
+            self.assertTrue(all(refs[0] == (png, 'image/png') and aspect == '1:1' for _, aspect, refs in prompts))
+            self.assertTrue(any('"Slide 4"' in p and 'last slide' in p and '4/4' in p for p, _, _ in prompts))
+            urls = item['slide_urls']
+            self.assertEqual(len(urls), 4)
+            self.assertTrue(urls[0].startswith('/content/items/7/media/image') and urls[1].startswith('/content/items/7/slides/2'))
+            self.assertIsNone(urls[2])
+            self.assertIn('no credit', item['slide_errors']['3'])
+            self.assertEqual(self.client.get('/content/items/7/slides/2').content, png)
+            prompts.clear()
+            item = self.client.post('/content/items/7/slides?slide=4').json()
+            self.assertEqual(len(prompts), 1)
+            self.assertEqual(self.client.post('/content/items/7/slides?slide=9').status_code, 404)
+            names = __import__('zipfile').ZipFile(__import__('io').BytesIO(self.client.get(f'/content/runs/{run_id}/download').content)).namelist()
+            self.assertIn('2026-11-10-linkedin-document/slide-2.png', names)
+
     def test_defaults_come_from_the_plan_rhythm(self):
         d = self.client.get(f'/content/plans/{self.pid}/defaults').json()
         self.assertEqual((d['version'], d['rhythm'], d['media_buying']), (2, {'LinkedIn': 2, 'Instagram': 3, 'Facebook': 2}, True))
@@ -91,7 +134,7 @@ class ContentRadar(unittest.TestCase):
         rid = r.json()['run_id']
         pack = self.client.get(f'/content/runs/{rid}/pack').json()
         self.assertIn('Funky and bold', pack['voice']['Instagram'])
-        self.assertIn('Egyptian Arabic', pack['voice']['Facebook'])
+        self.assertIn('Language: English only', pack['voice']['Facebook'])
         self.assertIn('Arabic-first support', pack['proof'])
         self.assertIn('Meta ads', pack['media_buying'])
         self.assertTrue(pack['make_media_buying'])

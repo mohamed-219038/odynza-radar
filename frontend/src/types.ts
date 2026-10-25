@@ -133,6 +133,8 @@ export interface ContentItem {
   video_status: string;
   image_url: string | null;
   video_url: string | null;
+  slide_urls?: (string | null)[];
+  slide_errors?: Record<string, string>;
 }
 
 /** An account as an admin sees it on the Team page; "pending" means signed up and waiting for approval. */

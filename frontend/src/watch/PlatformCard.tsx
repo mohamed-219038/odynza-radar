@@ -604,22 +604,30 @@ export interface DraftLook {
   text: string;
   hashtags: string[];
   slides?: { headline: string; body: string }[];
+  slideImages?: (string | null)[];
   image?: string | null;
   onImage?: string;
   when?: string;
 }
 
-function Slides({ slides, label }: { slides: { headline: string; body: string }[]; label: string }) {
+function Slides({ slides, label, images = [] }: { slides: { headline: string; body: string }[]; label: string; images?: (string | null)[] }) {
   if (!slides.length) return null;
   return (
     <ol className="pf-slides" aria-label={label}>
-      {slides.map((s, n) => (
-        <li key={n}>
-          <small>{n + 1}/{slides.length}</small>
-          <b dir="auto">{s.headline}</b>
-          {s.body ? <span dir="auto">{s.body}</span> : null}
-        </li>
-      ))}
+      {slides.map((s, n) =>
+        images[n] ? (
+          <li key={n} className="pf-slide-pic">
+            <img src={images[n] as string} alt={`Slide ${n + 1}: ${s.headline}`} loading="lazy" />
+            <small>{n + 1}/{slides.length}</small>
+          </li>
+        ) : (
+          <li key={n}>
+            <small>{n + 1}/{slides.length}</small>
+            <b dir="auto">{s.headline}</b>
+            {s.body ? <span dir="auto">{s.body}</span> : null}
+          </li>
+        ),
+      )}
     </ol>
   );
 }
@@ -674,7 +682,7 @@ export function DraftCard({ d, who }: { d: DraftLook; who: Who }) {
         <div className="pf-ig-actions">{I.heart}{I.comment}{I.send}<span className="pf-end">{I.save}</span></div>
         <div className="pf-ig-body">
           <Caption text={text} limit={125} lead={<b>{handle(who.name)} </b>} />
-          <Slides slides={slides} label="Carousel slides" />
+          <Slides slides={slides} images={d.slideImages} label="Carousel slides" />
         </div>
       </article>
     );
@@ -689,7 +697,7 @@ export function DraftCard({ d, who }: { d: DraftLook; who: Who }) {
         </header>
         <Caption text={text} limit={240} more="See more" />
         <DraftPicture d={d} ratio="1.2 / 1" />
-        <Slides slides={slides} label="Carousel cards" />
+        <Slides slides={slides} images={d.slideImages} label="Carousel cards" />
         <div className="pf-bar"><span>{I.like} Like</span><span>{I.comment} Comment</span><span>{I.share} Share</span></div>
       </article>
     );
@@ -703,7 +711,7 @@ export function DraftCard({ d, who }: { d: DraftLook; who: Who }) {
       </header>
       <Caption text={text} limit={210} more="…see more" />
       <DraftPicture d={d} ratio="1.25 / 1" />
-      <Slides slides={slides} label="Document pages" />
+      <Slides slides={slides} images={d.slideImages} label="Document pages" />
       <div className="pf-bar"><span>{I.like} Like</span><span>{I.comment} Comment</span><span>{I.repost} Repost</span><span>{I.send} Send</span></div>
     </article>
   );

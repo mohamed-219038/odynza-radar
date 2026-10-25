@@ -27,13 +27,12 @@ RULES = {
     'LinkedIn': ('LinkedIn, in English: B2B decision makers. Hook in the first line (under 140 characters, it shows before '
                  '"see more"). 600 to 1,300 characters, short paragraphs, one idea, one clear CTA. 3 to 5 hashtags. No '
                  'emojis in the hook. A "document" post is a PDF carousel: 5 to 7 slides (slide 1 = hook, last = CTA).'),
-    'Instagram': ('Instagram, in Egyptian Arabic (English terms like AI or CRM are fine): visual first. Caption hook in the '
-                  'first line, 300 to 1,000 characters, line breaks, a CTA such as "ابعتلنا DM" or "اللينك في البايو". 5 to 10 '
-                  'hashtags mixing Arabic and English. A carousel has 4 to 7 slides. A reel is 5 to 8 seconds, vertical, one '
-                  'striking motion idea that animates the key frame. A story is 3 to 5 vertical frames: each frame one short '
-                  'line (headline) and an optional sticker idea (body, such as a poll or a question box); the last frame '
-                  'asks for a reply or a link tap.'),
-    'Facebook': ('Facebook, in Egyptian Arabic: SME owners and managers in Egypt, warm and practical. Open with an everyday '
+    'Instagram': ('Instagram, in English: visual first. Caption hook in the first line, 300 to 1,000 characters, line '
+                  'breaks, a CTA such as "DM us" or "Link in bio". 5 to 10 English hashtags. A carousel has 4 to 7 slides. '
+                  'A reel is 5 to 8 seconds, vertical, one striking motion idea that animates the key frame. A story is 3 to 5 '
+                  'vertical frames: each frame one short line (headline) and an optional sticker idea (body, such as a poll '
+                  'or a question box); the last frame asks for a reply or a link tap.'),
+    'Facebook': ('Facebook, in English: SME owners and managers in Egypt, warm and practical. Open with an everyday '
                  'pain point, 300 to 900 characters, one CTA (message us, book a call or the website link). 2 to 4 '
                  'hashtags. Questions that invite comments work well.'),
 }
@@ -153,12 +152,11 @@ def content_pack(db, run, plan_row) -> dict:
              f"Audience: {inputs.get('audience') or (client.audience if client else '') or 'see the plan'}",
              f"Big idea: {ov.get('big_idea', '')}",
              f"Positioning: {pos.get('statement', '')}",
-             f"Positioning in Arabic: {pos.get('statement_ar', '')}",
              f"Core message: {pos.get('core_message', '')}",
              'Pillars:'] + [f"- {p.get('name')}: {p.get('message', '')} (proof: {p.get('proof', '') or 'none yet'})"
                             for p in pos.get('pillars') or []]
     brief += ['Campaigns:'] + [f"- {c['id']}: {c.get('name')} ({c.get('start_date')} to {c.get('end_date')}). Idea: "
-                               f"{c.get('idea', '')}. Hook: {c.get('hook', '')} / {c.get('hook_ar', '')}. Offer: "
+                               f"{c.get('idea', '')}. Hook: {c.get('hook', '')}. Offer: "
                                f"{c.get('offer', '')}. Message: {c.get('key_message', '')}"
                                for c in plan.get('campaigns') or []]
     mix = (plan.get('content_plan') or {}).get('mix') or []
@@ -171,7 +169,8 @@ def content_pack(db, run, plan_row) -> dict:
     for p in PLATFORMS:
         v = voices.get(p) or {}
         line = next((r.get('line') for r in pos.get('by_platform') or [] if r.get('platform') == p), '')
-        voice[p] = (f"Voice: {v.get('label', 'Friendly guide')} ({v.get('style', '')}). Language: {LANGUAGE[p]}. "
+        voice[p] = (f"Voice: {v.get('label', 'Friendly guide')} ({v.get('style', '')}). Language: {LANGUAGE[p]} only "
+                    "(caption, hashtags, slides and the text on the image), even where other instructions mention Arabic. "
                     f"Platform line from the plan: {line}")
 
     data = latest(db, client.id) if client else {}
@@ -214,6 +213,7 @@ def content_pack(db, run, plan_row) -> dict:
     money = media_money(plan, inputs)
     buying = [f"Plan period: {inputs.get('start_date')} to {inputs.get('end_date')}. Currency: {inputs.get('currency', '')}.",
               'Paid budget for the whole plan: ' + (', '.join(f'{k}: {v:,.0f}' for k, v in money.items()) or 'none'),
+              'Write every ad (primary text, headline) in English.',
               f"Paid channels allowed: {', '.join(inputs.get('paid') or []) or 'none'}",
               'KPIs: ' + '; '.join(f"{k.get('name')} {k.get('target')}" for k in plan.get('kpis') or []),
               'Campaigns: ' + '; '.join(f"{c['id']} {c.get('name')} {c.get('start_date')} to {c.get('end_date')} "

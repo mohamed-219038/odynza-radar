@@ -209,3 +209,7 @@
 :is(#_pf,.pf-card).pf-search .pf-search-body{display:flex;gap:12px;align-items:flex-start;padding-right:14px}
 :is(#_pf,.pf-card).pf-search .pf-search-body .pf-text{flex:1;min-width:0}
 :is(#_pf,.pf-card).pf-search .pf-search-pic{width:104px;height:104px;object-fit:cover;border-radius:8px;flex:none;max-width:none}
+:is(#_pf,.pf-card) .pf-slides li.pf-slide-pic{padding:0;overflow:hidden;position:relative;background:#000}
+:is(#_pf,.pf-card) .pf-slides li.pf-slide-pic img{width:100%;display:block;aspect-ratio:1/1;object-fit:cover}
+:is(#_pf,.pf-card) .pf-slides li.pf-slide-pic small{position:absolute;top:6px;right:6px;background:#000000a0;color:#fff;border-radius:8px;padding:1px 6px}
+:is(#_pf,.pf-card).pf-ig .pf-slides li.pf-slide-pic img,:is(#_pf,.pf-card).pf-fb .pf-slides li.pf-slide-pic img{aspect-ratio:4/5}

@@ -76,6 +76,7 @@ Only `GEMINI_API_KEY` is required. Everything else turns on more sources. `.env.
 | `GEMINI_API_KEY` | search, scoring, plans, content | https://aistudio.google.com/apikey (free tier works) |
 | `SERPER_API_KEY` | better company search, "Web & news" source | https://serper.dev |
 | `APIFY_API_TOKEN` | Facebook, Instagram, LinkedIn, Meta ads | https://console.apify.com/settings/integrations |
+| `OPENROUTER_API_KEY`, `OPENROUTER_IMAGE_MODEL` | better post images (paid, a few cents each; Cloudflare becomes the fallback) | https://openrouter.ai/settings/keys |
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | free post images (FLUX.2 on Workers AI; token needs Workers AI permission) | https://dash.cloudflare.com |
 | `SMTP_USER`, `SMTP_PASSWORD`, `BRIEF_EMAIL_TO` | weekly brief email (Gmail needs an app password) | your mail provider |
 

@@ -65,6 +65,12 @@ export function ItemCard({ item, canEdit, onChange }: { item: ContentItem; canEd
     await act("image", `/content/items/${item.id}/image`, { method: "POST" });
   }
 
+  const slideCount = item.slide_urls?.length ?? 0;
+  const slidesMade = (item.slide_urls ?? []).slice(1).filter(Boolean).length;
+  async function makeSlides(slide?: number) {
+    await act(slide ? `slide-${slide}` : "slides", `/content/items/${item.id}/slides${slide ? `?slide=${slide}` : ""}`, { method: "POST" });
+  }
+
   async function upload(kind: "image" | "video", file: File | undefined) {
     if (!file) return;
     setBusy(kind + "-upload");
@@ -155,6 +161,55 @@ export function ItemCard({ item, canEdit, onChange }: { item: ContentItem; canEd
             <p className="muted">
               Text on the image: <b dir="auto">{c.on_image_text}</b>
             </p>
+          ) : null}
+          {slideCount ? (
+            <div className="slide-pics">
+              <span className="eyebrow">SLIDE PICTURES · {slidesMade + (image ? 1 : 0)} OF {slideCount}</span>
+              <ol>
+                {(item.slide_urls ?? []).map((u, n) => {
+                  const url = safePath(u);
+                  const error = item.slide_errors?.[String(n + 1)];
+                  return (
+                    <li key={n}>
+                      <div className={`media-frame aspect-${item.aspect.replace(":", "x")}`}>
+                        {url ? (
+                          <img src={url} alt={`Slide ${n + 1}`} loading="lazy" />
+                        ) : (
+                          <span className="media-empty">
+                            {busy === "slides" || busy === `slide-${n + 1}` ? "Making…" : n === 0 ? "Cover: make the image above" : error || "Not made yet"}
+                          </span>
+                        )}
+                      </div>
+                      <small>
+                        {n + 1}/{slideCount}
+                        {url ? (
+                          <>
+                            {" · "}
+                            <a className="text-link" href={`${url}&download=true`}>
+                              Download
+                            </a>
+                          </>
+                        ) : null}
+                        {canEdit && n > 0 && image ? (
+                          <>
+                            {" · "}
+                            <button type="button" className="text-link" disabled={Boolean(busy)} onClick={() => makeSlides(n + 1)}>
+                              {busy === `slide-${n + 1}` ? "Making…" : url ? "Remake" : "Make"}
+                            </button>
+                          </>
+                        ) : null}
+                      </small>
+                    </li>
+                  );
+                })}
+              </ol>
+              {canEdit ? (
+                <button className="button secondary small-button" disabled={Boolean(busy) || !image} onClick={() => makeSlides()} title={image ? "" : "Make the cover image first"}>
+                  {busy === "slides" ? `Making ${slideCount - 1} slides…` : slidesMade ? `Remake slides 2 to ${slideCount}` : `Make slides 2 to ${slideCount}`}
+                </button>
+              ) : null}
+              <p className="muted">Each slide is drawn in the cover's style and costs about the same as one image.</p>
+            </div>
           ) : null}
           {c.slides.length ? (
             <ol className="content-slides">

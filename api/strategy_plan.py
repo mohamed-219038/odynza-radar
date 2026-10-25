@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 PLATFORMS = ('LinkedIn', 'Instagram', 'Facebook')
-LANGUAGE = {'LinkedIn': 'English', 'Instagram': 'Egyptian Arabic', 'Facebook': 'Egyptian Arabic'}
+LANGUAGE = {'LinkedIn': 'English', 'Instagram': 'English', 'Facebook': 'English'}   # Odynza: every voice in English
 VOICES = {
     'formal': ('Formal expert', 'Clear, precise and evidence-led. Short sentences, numbers and proof. No slang, no emojis.'),
     'friendly': ('Friendly guide', 'Warm and helpful. Speaks to one person, explains simply, a light emoji now and then.'),

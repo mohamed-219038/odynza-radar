@@ -112,7 +112,7 @@ class RadarPlans(unittest.TestCase):
         self.assertTrue(pack['ready'])
         self.assertIn('Nexa', pack['rivals'])
         self.assertIn('LinkedIn: Formal expert', pack['voices'])
-        self.assertIn('Egyptian Arabic', pack['voices'])
+        self.assertIn('Write Facebook lines in English', pack['voices'])
         self.assertIn('Cairo ICT 2026', pack['events'])
         self.assertNotIn('Ramadan', pack['events'])          # starts after the plan ends
         anon = TestClient(app).get(f'/strategy/plans/{pid}/pack')

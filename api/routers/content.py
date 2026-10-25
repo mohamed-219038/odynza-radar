@@ -4,6 +4,7 @@ Radar plans the posting slots, gives n8n a ready content pack, checks and saves 
 then makes the images. Reels are made by hand from the key frame and prompt shown here, then uploaded.
 Nothing is published: approved drafts are copied or downloaded and posted by hand.
 """
+import asyncio
 import io
 import os
 import re
@@ -19,10 +20,12 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from api.content_media import (MAX_UPLOAD, UPLOAD_TYPES, image_maker, image_prompt, is_quota_error, media_dir,
+                               save_slide, slide_file, slide_prompt,
                                media_file, plain_image_error, save_media, sniff)
 from api.content_plan import (ASPECT, DEFAULT_RHYTHM, MAX_TAGS, MAX_TEXT, PLATFORMS, clean_media_buying, content_pack,
                               media_money, plan_slots, review_checks)
 from api.routers.strategy import callback_allowed
+from api.strategy_plan import LANGUAGE
 from api.security import env_int, lookup_session, rate_limit, require_user
 from db.database import ContentItem, ContentRun, StrategyPlan, get_db
 
@@ -139,7 +142,26 @@ def serialize_item(item, run_id):
             'aspect': aspect_of(item),
             'image_status': item.image_status, 'image_error': item.image_error, 'video_status': item.video_status,
             'image_url': f'{base}/image?v={int(image.stat().st_mtime)}' if image else None,
-            'video_url': f'{base}/video?v={int(video.stat().st_mtime)}' if video else None}
+            'video_url': f'{base}/video?v={int(video.stat().st_mtime)}' if video else None,
+            'slide_urls': slide_urls(item, run_id), 'slide_errors': (item.content or {}).get('slide_errors') or {}}
+
+
+def slide_urls(item, run_id):
+    """One link per carousel slide: slide 1 is the draft's own image, the rest their own pictures (None until made)."""
+    slides = (item.content or {}).get('slides') or []
+    if item.format not in ('carousel', 'document') or len(slides) < 2:
+        return []
+    urls = []
+    for number in range(1, len(slides) + 1):
+        path = media_file(run_id, item.id, 'image') if number == 1 else slide_file(run_id, item.id, number)
+        kind = 'media/image' if number == 1 else f'slides/{number}'
+        urls.append(f'/content/items/{item.id}/{kind}?v={int(path.stat().st_mtime)}' if path else None)
+    return urls
+
+
+def current_voices(voices):
+    """Saved voices with today's language (older plans stored Egyptian Arabic for Instagram and Facebook)."""
+    return {p: {**v, 'language': LANGUAGE.get(p, 'English')} for p, v in (voices or {}).items() if isinstance(v, dict)}
 
 
 def serialize_run(run, db, full=False):
@@ -152,7 +174,7 @@ def serialize_run(run, db, full=False):
            'total': len(items), 'version': run.inputs.get('version', 1)}
     if full:
         out['media_buying'] = run.inputs.get('media_buying_plan')
-        out['voices'] = run.inputs.get('voices') or {}
+        out['voices'] = current_voices(run.inputs.get('voices'))
         out['items'] = [serialize_item(i, run.id) for i in items]
         out['brand_look'] = run.inputs.get('brand_look', '')
     return out
@@ -217,7 +239,7 @@ def run_defaults(plan_id: str, db: Session = Depends(get_db)):
     return {'plan_id': plan_id, 'company_name': plan.company_name, 'platforms': list(PLATFORMS), 'version': 2,
             'start_date': start.isoformat(), 'weeks': 1, 'reels_per_month': 2, 'stories_per_week': 3,
             'rhythm': {p: rhythm.get(p, DEFAULT_RHYTHM[p]) for p in PLATFORMS}, 'brand_look': DEFAULT_BRAND_LOOK,
-            'voices': inputs.get('voices') or {}, 'media_buying': bool(media_money(plan.plan or {}, inputs)),
+            'voices': current_voices(inputs.get('voices')), 'media_buying': bool(media_money(plan.plan or {}, inputs)),
             'paid_budget': media_money(plan.plan or {}, inputs), 'currency': inputs.get('currency', '')}
 
 
@@ -236,7 +258,7 @@ async def create_run(body: RunRequest, request: Request, db: Session = Depends(g
     inputs = {**body.model_dump(mode='json'), 'platforms': platforms, 'start_date': start.isoformat(),
               'end_date': (start + timedelta(days=7 * body.weeks - 1)).isoformat(),
               'brand_look': body.brand_look.strip() or DEFAULT_BRAND_LOOK, 'slots': slots}
-    inputs.update(version=2, client_id=plan.inputs.get('client_id'), voices=plan.inputs.get('voices') or {})
+    inputs.update(version=2, client_id=plan.inputs.get('client_id'), voices=current_voices(plan.inputs.get('voices')))
     run = ContentRun(plan_id=plan.id, session_id=plan.session_id, company_name=plan.company_name, inputs=inputs)
     db.add(run)
     db.commit()
@@ -410,6 +432,10 @@ def download_run(run_id: str, approved_only: bool = False, db: Session = Depends
                 path = media_file(run.id, item.id, kind)
                 if path:
                     archive.write(path, f'{folder}/{kind}{path.suffix}')
+            for number in range(2, len(c.get('slides') or []) + 1):
+                path = slide_file(run.id, item.id, number)
+                if path:
+                    archive.write(path, f'{folder}/slide-{number}{path.suffix}')
     slug = re.sub(r'[^a-z0-9]+', '-', run.company_name.lower()).strip('-') or 'company'
     return Response(buffer.getvalue(), media_type='application/zip',
                     headers={'Content-Disposition': f'attachment; filename="radar-content-{slug}-{run.inputs.get("start_date")}.zip"'})
@@ -447,6 +473,66 @@ async def remake_image(item_id: int, db: Session = Depends(get_db)):
     await make_images(sessionmaker(bind=db.get_bind()), item.run_id, [item.id])
     db.expire_all()
     return serialize_item(get_item(db, item_id), item.run_id)
+
+
+@router.post('/items/{item_id}/slides', dependencies=[Depends(rate_limit('content_slides', env_int('LIMIT_CONTENT_SLIDES_PER_HOUR', 15), 3600))])
+async def make_slides(item_id: int, slide: int | None = Query(default=None, ge=2, le=10), db: Session = Depends(get_db)):
+    """Pictures for carousel slides 2 and up (or only one slide), drawn in the style of slide 1 and waited for."""
+    item = get_item(db, item_id)
+    content = dict(item.content or {})
+    slides = content.get('slides') or []
+    if item.format not in ('carousel', 'document') or len(slides) < 2:
+        raise HTTPException(409, 'Only carousels and documents have slides.')
+    cover = media_file(item.run_id, item.id, 'image')
+    if cover is None:
+        raise HTTPException(409, 'Make or upload the cover image (slide 1) first.')
+    numbers = [slide] if slide else list(range(2, len(slides) + 1))
+    if any(n > len(slides) for n in numbers):
+        raise HTTPException(404, 'This draft has no such slide.')
+    run = db.get(ContentRun, item.run_id)
+    aspect = aspect_of(item)
+    try:
+        maker = image_maker()
+    except Exception as exc:
+        raise HTTPException(502, plain_image_error(exc)) from None
+    cover_bytes = cover.read_bytes()
+    references = [(cover_bytes, sniff(cover_bytes, 'image') or 'image/png')]
+    gate = asyncio.Semaphore(3)
+
+    async def one(number):
+        async with gate:
+            try:
+                data, mime = await maker.make(slide_prompt(content, run.inputs.get('brand_look', '') if run else '', aspect, number),
+                                              aspect, references)
+                save_slide(item.run_id, item.id, number, data, UPLOAD_TYPES['image'][mime])
+                return number, None
+            except Exception as exc:
+                return number, plain_image_error(exc)
+
+    errors = dict(content.get('slide_errors') or {})
+    for number, error in await asyncio.gather(*(one(n) for n in numbers)):
+        if error:
+            errors[str(number)] = error
+        else:
+            errors.pop(str(number), None)
+    content['slide_errors'] = errors
+    item.content = content
+    db.commit()
+    return serialize_item(item, item.run_id)
+
+
+@router.get('/items/{item_id}/slides/{number}', dependencies=[Depends(require_user)])
+def read_slide(item_id: int, number: int, download: bool = False, db: Session = Depends(get_db)):
+    item = get_item(db, item_id)
+    path = slide_file(item.run_id, item.id, number)
+    if path is None:
+        raise HTTPException(404, 'No picture for this slide yet')
+    ext = path.suffix.lstrip('.')
+    mime = {v: k for k, v in UPLOAD_TYPES['image'].items()}[ext]
+    name = f'{item.post_date}-{item.platform.lower()}-{item.format}-slide-{number}.{ext}'
+    return FileResponse(path, media_type=mime, headers={
+        'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff',
+        'Content-Disposition': f'{"attachment" if download else "inline"}; filename="{name}"'})
 
 
 @router.put('/items/{item_id}/media/{kind}', dependencies=[Depends(require_user)])

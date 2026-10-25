@@ -1,16 +1,20 @@
 """Post images and reel key frames, and the files they are saved to.
 
-Two image makers:
+Three image makers:
+- OpenRouter image models (paid, a few cents an image), used when OPENROUTER_API_KEY is set in .env.
+  Model: OPENROUTER_IMAGE_MODEL (default google/gemini-3.1-flash-image). When Cloudflare is also set up it is the
+  fallback if an OpenRouter image fails (no credit, busy, refused).
 - FLUX.2 [klein] on Cloudflare Workers AI (free daily allowance), used when CLOUDFLARE_ACCOUNT_ID and
   CLOUDFLARE_API_TOKEN are set in .env. Model: CLOUDFLARE_IMAGE_MODEL (default @cf/black-forest-labs/flux-2-klein-4b).
 - Nano Banana (Gemini image models, GEMINI_IMAGE_MODEL), which needs a Gemini key with paid image quota.
-IMAGE_PROVIDER=cloudflare|gemini forces one; by default Cloudflare is used when it is set up.
+IMAGE_PROVIDER=openrouter|cloudflare|gemini forces one; by default OpenRouter, then Cloudflare, then Gemini.
 The company logo and up to two of its own post images go along as style references, so the brand look comes from
 the company's existing content. If no image can be made, the draft keeps its prompt so the image can be made in
 the Gemini app and uploaded.
 """
 import base64
 import io
+import logging
 import os
 import re
 from pathlib import Path
@@ -24,6 +28,9 @@ DEFAULT_IMAGE_MODEL = 'gemini-2.5-flash-image'
 DEFAULT_FLUX_MODEL = '@cf/black-forest-labs/flux-2-klein-4b'
 # FLUX sizes (multiples of 16): about 1 to 1.3 megapixels keeps each image cheap in the free allowance.
 FLUX_SIZE = {'1:1': (1024, 1024), '4:5': (1024, 1280), '9:16': (864, 1536)}
+DEFAULT_OPENROUTER_MODEL = 'google/gemini-3.1-flash-image'
+OPENROUTER_IMAGES_URL = 'https://openrouter.ai/api/v1/images'
+OPENROUTER_MAX_REFERENCE = 1024
 FLUX_MAX_REFERENCE = 511   # Workers AI wants reference images smaller than 512x512
 REFERENCE_TYPES = {'image/png', 'image/jpeg', 'image/webp'}
 UPLOAD_TYPES = {'image': {'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp'},
@@ -58,6 +65,25 @@ def save_media(run_id, item_id, kind, data, ext):
     return path
 
 
+def slide_file(run_id, item_id, number):
+    """The saved picture of carousel slide number (2 and up; slide 1 is the draft's own image), or None."""
+    folder = ROOT / 'data' / 'content' / run_id
+    for ext in UPLOAD_TYPES['image'].values():
+        path = folder / f'{item_id}-slide{number}.{ext}'
+        if path.exists():
+            return path
+    return None
+
+
+def save_slide(run_id, item_id, number, data, ext):
+    folder = media_dir(run_id)
+    for old in UPLOAD_TYPES['image'].values():
+        (folder / f'{item_id}-slide{number}.{old}').unlink(missing_ok=True)
+    path = folder / f'{item_id}-slide{number}.{ext}'
+    path.write_bytes(data)
+    return path
+
+
 def sniff(data, kind):
     """The real file type from its first bytes; the browser's Content-Type is not trusted."""
     if kind == 'image':
@@ -85,6 +111,26 @@ def image_prompt(content, brand_look, aspect):
              f'Render this headline exactly, spelled correctly, large and readable: "{headline}"' if headline else
              'No text on the image except the logo.',
              f'Aspect ratio {aspect}. Social media post quality, clean composition, no watermark, no fake UI text.']
+    return '\n'.join(p for p in parts if p)
+
+
+def slide_prompt(content, brand_look, aspect, number):
+    """Slide number of a carousel; reference image 0 is slide 1 (the cover), so every slide shares its design."""
+    slides = content.get('slides') or []
+    slide = slides[number - 1] if 0 < number <= len(slides) else {}
+    headline, body = (slide.get('headline') or '').strip(), (slide.get('body') or '').strip()
+    last = number == len(slides)
+    parts = [f'Slide {number} of {len(slides)} of the same social media carousel.',
+             'Reference image 0 is slide 1, the cover. Keep exactly its background, colours, fonts, text sizes, margins, '
+             'logo and its position, so the slides look like one set. Do not copy its headline.',
+             f'Topic of the carousel: {content.get("image_prompt", "").strip()}' if content.get('image_prompt') else '',
+             f'Brand look: {brand_look}' if brand_look else '',
+             f'Render this headline exactly, spelled correctly, large and readable: "{headline}"' if headline else '',
+             f'Under it, smaller and readable, render exactly: "{body}"' if body else '',
+             'One simple supporting icon or illustration in the same style. '
+             + ('This is the last slide: make the call to action stand out. ' if last else '')
+             + f'Small page number "{number}/{len(slides)}" in a corner.',
+             f'Aspect ratio {aspect}. No watermark, no other text, no fake UI text.']
     return '\n'.join(p for p in parts if p)
 
 
@@ -189,10 +235,85 @@ class FluxMaker:
         return data, mime
 
 
+class OpenRouterMaker:
+    """OpenRouter's image API: JSON in (prompt, aspect ratio, reference images as data URLs), base64 image out."""
+    name = 'openrouter'
+
+    def __init__(self):
+        self.key = os.getenv('OPENROUTER_API_KEY', '').strip()
+        self.model = os.getenv('OPENROUTER_IMAGE_MODEL', '').strip() or DEFAULT_OPENROUTER_MODEL
+        if not self.key:
+            raise GeminiError('Set OPENROUTER_API_KEY in .env to make images with OpenRouter')
+        if not re.fullmatch(r'[a-z0-9._-]+/[a-zA-Z0-9._:-]+', self.model):
+            raise GeminiError('OPENROUTER_IMAGE_MODEL must be an OpenRouter model id such as google/gemini-3.1-flash-image')
+
+    async def make(self, prompt, aspect, references=()):
+        refs = []
+        for data, mime in references:
+            if mime not in REFERENCE_TYPES or len(refs) >= 4:
+                continue
+            small = shrink(data, OPENROUTER_MAX_REFERENCE)
+            data, mime = (small, 'image/png') if small else (data, mime)
+            refs.append({'type': 'image_url', 'image_url': {'url': f'data:{mime};base64,{base64.b64encode(data).decode()}'}})
+        payload = {'model': self.model, 'prompt': prompt[:4000], 'aspect_ratio': aspect, 'n': 1}
+        if refs:
+            payload['input_references'] = refs
+        headers = {'Authorization': f'Bearer {self.key}', 'X-Title': 'Odynza Radar'}
+        try:
+            async with httpx.AsyncClient(timeout=240, headers=headers) as client:
+                response = await client.post(OPENROUTER_IMAGES_URL, json=payload)
+                body = response.json() if response.content else {}
+                if response.status_code >= 400:
+                    error = body.get('error') if isinstance(body, dict) else None
+                    detail = error.get('message', '') if isinstance(error, dict) else str(error or '')
+                    raise GeminiError(f'OpenRouter returned HTTP {response.status_code}: {detail[:300]}')
+                for item in body.get('data') or []:
+                    data = b''
+                    if item.get('b64_json'):
+                        data = base64.b64decode(item['b64_json'])
+                    elif str(item.get('url', '')).startswith('https://'):
+                        async with httpx.AsyncClient(timeout=60) as plain:   # no key on the picture link
+                            got = await plain.get(item['url'])
+                        data = got.content if got.status_code < 400 else b''
+                    mime = sniff(data, 'image') if data else None
+                    if mime:
+                        return data, mime
+        except httpx.TimeoutException:
+            raise GeminiError('The image model timed out') from None
+        except httpx.RequestError:
+            raise GeminiError('Unable to connect to OpenRouter to make the image') from None
+        except GeminiError:
+            raise
+        except ValueError:   # a broken JSON or base64 answer
+            raise GeminiError('OpenRouter sent an answer that could not be read') from None
+        raise GeminiError('The image model returned no image (it may have refused the prompt); edit the prompt and try again')
+
+
+class FallbackMaker:
+    """Tries the first maker, and the free Cloudflare one when that fails."""
+    def __init__(self, first, backup):
+        self.first, self.backup = first, backup
+        self.name = first.name
+
+    async def make(self, prompt, aspect, references=()):
+        try:
+            return await self.first.make(prompt, aspect, references)
+        except GeminiError as error:
+            try:
+                return await self.backup.make(prompt, aspect, references)
+            except GeminiError:
+                raise error from None
+
+
 def image_maker():
-    """FLUX.2 on Cloudflare when it is set up (or IMAGE_PROVIDER=cloudflare), otherwise Nano Banana."""
+    """OpenRouter when its key is set (Cloudflare as its fallback), else FLUX.2 on Cloudflare, else Nano Banana.
+    IMAGE_PROVIDER=openrouter|cloudflare|gemini forces one."""
     choice = os.getenv('IMAGE_PROVIDER', '').strip().lower()
     cloudflare = bool(os.getenv('CLOUDFLARE_ACCOUNT_ID', '').strip() and os.getenv('CLOUDFLARE_API_TOKEN', '').strip())
+    openrouter = bool(os.getenv('OPENROUTER_API_KEY', '').strip())
+    if choice == 'openrouter' or (choice not in ('cloudflare', 'gemini') and openrouter):
+        maker = OpenRouterMaker()
+        return FallbackMaker(maker, FluxMaker()) if cloudflare else maker
     if choice == 'cloudflare' or (choice != 'gemini' and cloudflare):
         return FluxMaker()
     return ImageMaker()
@@ -200,11 +321,24 @@ def image_maker():
 
 def is_quota_error(error):
     text = str(error).casefold()
-    return '429' in text or 'quota' in text or 'neuron' in text or 'daily free allocation' in text
+    return '429' in text or 'http 402' in text or 'quota' in text or 'neuron' in text or 'daily free allocation' in text
 
 
 def plain_image_error(error):
+    logging.getLogger('radar.images').warning('Image not made: %s', error)
     text = str(error).casefold()
+    if 'openrouter' in text:
+        if 'http 402' in text or 'credit' in text:
+            return ('Your OpenRouter account has no credit left for images. Add credit at openrouter.ai/settings/credits, '
+                    'or remove OPENROUTER_API_KEY from .env to go back to the free Cloudflare images.')
+        if 'http 401' in text or 'http 403' in text:
+            return 'OpenRouter did not accept the key. Check OPENROUTER_API_KEY in .env (it starts with sk-or-).'
+        if 'http 404' in text or 'http 400' in text and 'model' in text:
+            return 'OpenRouter does not have this image model. Check OPENROUTER_IMAGE_MODEL in .env, or leave it empty.'
+        if is_quota_error(error):
+            return 'OpenRouter is limiting requests right now. Press Make image again in a minute.'
+        if 'openrouter_api_key' in text or 'openrouter_image_model' in text:
+            return str(error)
     if 'cloudflare' in text:
         if is_quota_error(error):
             return ("Today's free Cloudflare image allowance is used up. It renews at midnight UTC (2 or 3 am Cairo); "
@@ -223,4 +357,5 @@ def plain_image_error(error):
         return 'The Gemini key is missing or not valid. Check GEMINI_API_KEY in .env.'
     if 'refused' in text or 'no image' in text:
         return 'The image model did not return an image. Edit the image prompt and try again.'
-    return 'The image service was busy. Press Make image again in a few minutes.'
+    detail = re.sub(r'\s+', ' ', str(error)).strip()[:240]
+    return f'The image could not be made ({detail}). Press Make image again in a few minutes.'

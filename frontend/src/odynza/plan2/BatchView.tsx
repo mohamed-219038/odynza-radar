@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { download, request } from "../../api";
 import { ItemCard, runActive } from "../../components/ItemCard";
 import { useToast } from "../../components/Toast";
-import { saveFile } from "../../format";
+import { safePath, saveFile } from "../../format";
 import type { ContentItem, ItemStatus, Platform } from "../../types";
 import { DraftCard, PlannedAd, type Who } from "../../watch/PlatformCard";
 import { PlatformGlyph } from "../../watch/Visuals";
@@ -119,7 +119,7 @@ const when = (i: ContentItem) => `${fmtDate(i.date, { weekday: "short", day: "nu
 
 function Preview({ item, who }: { item: ContentItem; who: Who }) {
   const c = item.content;
-  return <DraftCard who={who} d={{ platform: item.platform, format: item.format, text: c.text, hashtags: c.hashtags, slides: c.slides, image: item.image_url, onImage: c.on_image_text, when: when(item) }} />;
+  return <DraftCard who={who} d={{ platform: item.platform, format: item.format, text: c.text, hashtags: c.hashtags, slides: c.slides, slideImages: (item.slide_urls ?? []).map((u) => safePath(u) || null), image: item.image_url, onImage: c.on_image_text, when: when(item) }} />;
 }
 
 function Drafts({ items, who, canEdit, onChange }: { items: ContentItem[]; who: Who; canEdit: boolean; onChange: (i: ContentItem) => void }) {
